@@ -33,7 +33,7 @@ static inline ContainerType max(const ContainerType & lhs, const ContainerType &
 template
 <
     typename Key,
-    typename HashContainer,
+    typename HashContainer, //就是HashSet<Key, TrivialHash, UniqCombinedHashTableGrower>
     UInt8 small_set_size_max,
     UInt8 medium_set_power2_max,
     UInt8 K,
@@ -63,13 +63,14 @@ public:
     using value_type = Key;
 
 private:
-    using Small = SmallSet<Key, small_set_size_max>;
-    using Medium = HashContainer;
-    using Large = HyperLogLogCounter<K, Key, Hash, HashValueType, DenominatorType, BiasEstimator, mode>;
+    using Small = SmallSet<Key, small_set_size_max>; // 少量数据使用数组，最大存储元素数：small_set_size_max
+    using Medium = HashContainer; // 中量数据使用set
+    using Large = HyperLogLogCounter<K, Key, Hash, HashValueType, DenominatorType, BiasEstimator, mode>; // 大量数据使用Hll，默认参数denominator_mode = DenominatorMode::StableIfBig
 
 public:
     CombinedCardinalityEstimator()
     {
+        // 刚开始是SMALL类型
         setContainerType(details::ContainerType::SMALL);
     }
 
@@ -90,7 +91,7 @@ public:
                     small.insert(value);
                 else
                 {
-                    toMedium();
+                    toMedium(); // 扩容，类型转换
                     getContainer<Medium>().insert(value);
                 }
             }
@@ -102,7 +103,7 @@ public:
                 container.insert(value);
             else
             {
-                toLarge();
+                toLarge(); // 扩容，类型转换
                 getContainer<Large>().insert(value);
             }
         }
@@ -151,6 +152,9 @@ public:
             getContainer<Large>().merge(rhs.getContainer<Large>());
     }
 
+    /**
+     * 反序列化
+     */
     /// You can only call for an empty object.
     void read(DB::ReadBuffer & in)
     {
@@ -228,6 +232,10 @@ public:
     }
 
 private:
+
+    /**
+     * SMALL转为MEDIUM
+     */
     void toMedium()
     {
         if (getContainerType() != details::ContainerType::SMALL)
@@ -235,6 +243,7 @@ private:
 
         auto tmp_medium = std::make_unique<Medium>();
 
+        // 遍历元素添加
         for (const auto & x : small)
             tmp_medium->insert(x.getValue());
 
@@ -242,6 +251,9 @@ private:
         setContainerType(details::ContainerType::MEDIUM);
     }
 
+    /**
+     * MEDIUM转为LARGE
+     */
     void toLarge()
     {
         auto container_type = getContainerType();
@@ -253,11 +265,13 @@ private:
 
         if (container_type == details::ContainerType::SMALL)
         {
+            // 遍历元素添加
             for (const auto & x : small)
                 tmp_large->insert(x.getValue());
         }
         else if (container_type == details::ContainerType::MEDIUM)
         {
+            // 遍历元素添加
             for (const auto & x : getContainer<Medium>())
                 tmp_large->insert(x.getValue());
 

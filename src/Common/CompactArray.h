@@ -15,7 +15,13 @@ namespace ErrorCodes
 }
 
 
-/** Compact array for data storage, size `content_width`, in bits, of which is
+/**
+  * 用于数据存储的紧凑阵列，大小为“content_width”，以位为单位，其小于一个字节。
+  * CompactArray将相邻的“content_width”位值存储在字节数组中，而不是将每个值存储在单独的字节中（这会导致content_width=5浪费37.5%的空间），
+  * 也就是说，CompactArray实际上模拟了一个“content_wwidth”位的值数组。
+  * 实际就是模拟连续存储content_width bit的数组
+  *
+  * Compact array for data storage, size `content_width`, in bits, of which is
   * less than one byte. Instead of storing each value in a separate
   * bytes, which leads to a waste of 37.5% of the space for content_width = 5, CompactArray stores
   * adjacent `content_width`-bit values in the byte array, that is actually CompactArray
@@ -55,7 +61,8 @@ public:
     }
 
 private:
-    /// number of bytes in bitset
+    /// number of bytes in bitset. 计算需要byte[] size
+    /// content_width: RankWidth UInt64是6, UInt32是5
     static constexpr size_t BITSET_SIZE = (static_cast<size_t>(bucket_count) * content_width + 7) / 8;
     UInt8 bitset[BITSET_SIZE] = { 0 };
 };
@@ -169,14 +176,17 @@ public:
 
     Locus ALWAYS_INLINE & operator=(UInt8 content)
     {
+        /// 左边界字节索引 == 右边界字节索引 或者 左边界字节索引是最后的索引
         if ((index_l == index_r) || (index_l == (BITSET_SIZE - 1)))
         {
+            /// The cell 完全适合一个字节。.
             /// The cell completely fits into one byte.
             *content_l &= ~(((1 << content_width) - 1) << offset_l);
             *content_l |= content << offset_l;
         }
         else
         {
+            /// The cell 重叠两个字节.
             /// The cell overlaps two bytes.
             size_t left = 8 - offset_l;
 

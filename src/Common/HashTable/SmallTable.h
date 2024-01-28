@@ -14,7 +14,11 @@ namespace DB
 }
 
 
-/** Replacement of the hash table for a small number (<10) of keys.
+/**
+  * 用少量（10）个密钥替换哈希表。实现为具有线性搜索的数组。数组位于对象内部。该接口是HashTable接口的一个子集。只有当“full”方法返回false时，才能插入。
+  * 对于未知数量的不同键，您应该检查表是否未满，并在这种情况下执行“回退”（例如，使用真实的哈希表）。
+  *
+  * Replacement of the hash table for a small number (<10) of keys.
   * Implemented as an array with linear search.
   * The array is located inside the object.
   * The interface is a subset of the HashTable interface.
@@ -41,8 +45,8 @@ protected:
 
     using Self = SmallTable;
 
-    size_t m_size = 0;        /// Amount of elements.
-    Cell buf[capacity];       /// A piece of memory for all elements.
+    size_t m_size = 0;        /// Amount of elements. 元素的大小
+    Cell buf[capacity];       /// A piece of memory for all elements. 元素Key数组
 
 
     /// Find a cell with the same key or an empty cell, starting from the specified position and then by the collision resolution chain.
@@ -279,7 +283,7 @@ public:
         m_size = 0;
 
         size_t new_size = 0;
-        DB::readVarUInt(new_size, rb);
+        DB::readVarUInt(new_size, rb); // 读取size
         if (new_size > 1000'000)
             throw DB::Exception(DB::ErrorCodes::TOO_LARGE_ARRAY_SIZE, "The size of serialized small table is suspiciously large: {}", new_size);
 
@@ -287,7 +291,7 @@ public:
             throw DB::Exception(DB::ErrorCodes::INCORRECT_DATA, "Illegal size");
 
         for (size_t i = 0; i < new_size; ++i)
-            buf[i].read(rb);
+            buf[i].read(rb); // 读取每个元素，感觉就是hash32或者64
 
         m_size = new_size;
     }

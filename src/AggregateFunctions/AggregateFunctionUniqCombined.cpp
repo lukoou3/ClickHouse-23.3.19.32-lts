@@ -46,6 +46,7 @@ namespace
         {
             const IDataType & argument_type = *argument_types[0];
 
+            // HashValueType: Int64, Int32
             AggregateFunctionPtr res(createWithNumericType<WithK<K, HashValueType>::template AggregateFunction>(*argument_types[0], argument_types, params));
 
             WhichDataType which(argument_type);

@@ -45,7 +45,7 @@ void SerializationString::serializeBinary(const Field & field, WriteBuffer & ost
     writeString(s, ostr);
 }
 
-
+/// 读取字符串：size + data
 void SerializationString::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
     UInt64 size;

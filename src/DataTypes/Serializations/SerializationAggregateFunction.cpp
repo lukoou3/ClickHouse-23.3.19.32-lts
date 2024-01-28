@@ -25,6 +25,7 @@ void SerializationAggregateFunction::serializeBinary(const Field & field, WriteB
 
 void SerializationAggregateFunction::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings &) const
 {
+    // 直接序列化
     field = AggregateFunctionStateData();
     AggregateFunctionStateData & s = field.get<AggregateFunctionStateData &>();
     readBinary(s.data, istr);

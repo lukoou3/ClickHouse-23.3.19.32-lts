@@ -1115,6 +1115,7 @@ inline void readBinary(bool & x, ReadBuffer & buf)
     x = (flag != 0);
 }
 
+// 读取基本数据类型
 inline void readBinary(String & x, ReadBuffer & buf) { readStringBinary(x, buf); }
 inline void readBinary(Int32 & x, ReadBuffer & buf) { readPODBinary(x, buf); }
 inline void readBinary(Int128 & x, ReadBuffer & buf) { readPODBinary(x, buf); }

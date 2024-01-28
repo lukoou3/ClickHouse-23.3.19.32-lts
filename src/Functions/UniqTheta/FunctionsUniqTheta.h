@@ -150,6 +150,7 @@ namespace DB
         }
     };
 
+    // UniqTheta定义了普通的函数，可以实现交集、并集、差集
     struct NameUniqThetaIntersect
     {
         static constexpr auto name = "uniqThetaIntersect";

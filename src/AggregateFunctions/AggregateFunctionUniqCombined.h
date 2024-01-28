@@ -25,6 +25,8 @@ struct Settings;
 namespace detail
 {
     /** Hash function for uniqCombined/uniqCombined64 (based on Ret).
+     * uniqCombined/uniqCombinated64的哈希函数（基于Ret）。
+     * 结果会根据Ret转为Int64, Int32
      */
     template <typename T, typename Ret>
     struct AggregateFunctionUniqCombinedTraits
@@ -81,6 +83,13 @@ struct AggregateFunctionUniqCombinedDataWithKey
     // TODO(ilezhankin): pre-generate values for |UniqCombinedBiasData|,
     //                   at the moment gen-bias-data.py script doesn't work.
 
+    /**
+     * Key就是UInt64或者UInt32
+     * K就是HLL的precision
+     * small_set_size_max = 16
+     * medium_set_power2_max = precision - 5 + (sizeof(Key) == sizeof(UInt32))
+     * 12:7(128), 13: 8(256) , 14: 9(512)
+     */
     // We want to migrate from |HashSet| to |HyperLogLogCounter| when the sizes in memory become almost equal.
     // The size per element in |HashSet| is sizeof(Key)*2 bytes, and the overall size of |HyperLogLogCounter| is 2^K * 6 bits.
     // For Key=UInt32 we can calculate: 2^X * 4 * 2 ≤ 2^(K-3) * 6 ⇒ X ≤ K-4.
@@ -112,6 +121,8 @@ struct AggregateFunctionUniqCombinedData : public AggregateFunctionUniqCombinedD
 };
 
 
+/// 对于字符串键，总是使用64位散列（uniqCombined和uniqCombinated64都使用），
+/// 因为向后兼容性（uniqCombined已经使用了64位哈希）
 /// For String keys, 64 bit hash is always used (both for uniqCombined and uniqCombined64),
 ///  because of backwards compatibility (64 bit hash was already used for uniqCombined).
 template <UInt8 K, typename HashValueType>
@@ -153,6 +164,7 @@ public:
         else
         {
             const auto & value = assert_cast<const ColumnVector<T> &>(*columns[0]).getElement(row_num);
+            // 每次先计算hash，然后再插入容器
             this->data(place).set.insert(detail::AggregateFunctionUniqCombinedTraits<T, HashValueType>::hash(value));
         }
     }
@@ -178,7 +190,9 @@ public:
     }
 };
 
-/** For multiple arguments. To compute, hashes them.
+/**
+  * 对于多个参数。要计算，请对它们进行哈希运算。您可以按原样传递多个参数；您还可以传递一个参数-元组。但是（为了有效实现的可能性），不能传递几个参数，其中有元组。
+  * For multiple arguments. To compute, hashes them.
   * You can pass multiple arguments as is; You can also pass one argument - a tuple.
   * But (for the possibility of efficient implementation), you can not pass several arguments, among which there are tuples.
   */

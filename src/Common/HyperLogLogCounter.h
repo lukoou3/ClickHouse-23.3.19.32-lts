@@ -71,6 +71,9 @@ template <> struct MinCounterTypeHelper<3>    { using Type = UInt64; };
 /// Used in HyperLogLogCounter in order to spend memory efficiently.
 template <UInt64 MaxValue> struct MinCounterType
 {
+    /**
+     * p: (0, 8] => UInt8, (8, 16] => UInt16, (16, 32] => UInt32, (32, 64] => UInt64
+     */
     using Type = typename MinCounterTypeHelper<
         (MaxValue >= 1 << 8) +
         (MaxValue >= 1 << 16) +
@@ -111,6 +114,12 @@ struct IntermediateDenominator<HashValueType, DenominatorType, DenominatorMode::
     using Type = DenominatorType;
 };
 
+/**
+ * HyperLogLog算法表达式分母的“轻量级”实现。
+ * 使用最少的内存，但估计可能不稳定。
+ * 列组存储足够小时可满足要求。
+ * precision < 12 || !(denominator_mode == DenominatorMode::StableIfBig)
+ */
 /// "Lightweight" implementation of expression's denominator for HyperLogLog algorithm.
 /// Uses minimum amount of memory, but estimates may be unstable.
 /// Satisfiable when rank storage is small enough.
@@ -183,18 +192,19 @@ public:
 
     DenominatorType get() const
     {
+        // sum0/2**-0 + sum1/2**-1 + sum2/2**-2 + ... + sum10/2**-10 =
         long double val = rank_count[size - 1];
         for (int i = size - 2; i >= 0; --i)
         {
-            val /= 2.0;
+            val /= 2.0; // 数组越靠后除以2越多，实现了sum10/2**-10的计算
             val += rank_count[i];
         }
         return static_cast<DenominatorType>(val);
     }
 
 private:
-    static constexpr size_t size = max_rank + 1;
-    UInt32 rank_count[size] = { 0 };
+    static constexpr size_t size = max_rank + 1; // max_rank = sizeof(HashValueType) * 8 - precision + 1 = 64 - precision + 1
+    UInt32 rank_count[size] = { 0 }; // reg数组每个rank的数量，长度为max_rank + 1，他这计算是在中间过程中的
 };
 
 /// Number of trailing zeros.
@@ -253,6 +263,13 @@ enum class HyperLogLogMode
     FullFeatured    /// LinearCounting or HyperLogLog++ error correction (depending).
 };
 
+/**
+ * 使用HyperLogLog算法估计唯一值的数量。
+ * 理论相对误差约为1.04/sqrt（2^精度），其中精度是用于索引的哈希函数的前缀大小（桶数M=2^精度）。
+ * 建议的精度值为：3..20.
+ *
+ * 来源：“HyperLogLog:近似最优基数估计算法的分析”
+ */
 /// Estimation of number of unique values using HyperLogLog algorithm.
 ///
 /// Theoretical relative error is ~1.04 / sqrt(2^precision), where
@@ -274,30 +291,32 @@ template <
 class HyperLogLogCounter : private Hash
 {
 private:
-    /// Number of buckets.
+    /// Number of buckets. buckets的数量
     static constexpr size_t bucket_count = 1ULL << precision;
 
     /// Size of counter's rank in bits.
-    static constexpr UInt8 rank_width = details::RankWidth<HashValueType>::get();
+    static constexpr UInt8 rank_width = details::RankWidth<HashValueType>::get(); // RankWidth UInt64是6, UInt32是5
 
     using Value = UInt64;
-    using RankStore = DB::CompactArray<HashValueType, rank_width, bucket_count>;
+    using RankStore = DB::CompactArray<HashValueType, rank_width, bucket_count>; // CompactArray根据rank_width, bucket_count计算字节长度
 
 public:
     using value_type = Value;
 
+    /// 这不是和hll一样吗，就是他这value传的是啥，都是int64吗
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
     void ALWAYS_INLINE insert(Value value)
     {
         HashValueType hash = getHash(value);
 
+        /// 将hash划分为两个sub-values。第一个是bucket number，第二个将用于计算rank。
         /// Divide hash to two sub-values. First is bucket number, second will be used to calculate rank.
-        HashValueType bucket = extractBitSequence(hash, 0, precision);
-        HashValueType tail = extractBitSequence(hash, precision, sizeof(HashValueType) * 8);
-        UInt8 rank = calculateRank(tail);
+        HashValueType bucket = extractBitSequence(hash, 0, precision); // 位置：[0, precision)
+        HashValueType tail = extractBitSequence(hash, precision, sizeof(HashValueType) * 8); // 位置：[precision, 64)
+        UInt8 rank = calculateRank(tail); // 结尾是0的数量 + 1. int max_rank = sizeof(HashValueType) * 8 - precision + 1;
 
         /// Update maximum rank for current bucket.
-        update(bucket, rank);
+        update(bucket, rank); // 底层CompactArray数组会自动计算bucket对应的字节位置
     }
 
     UInt64 size() const
@@ -314,6 +333,7 @@ public:
         /// Harmonic mean for all buckets of 2^rank values is: bucket_count / ∑ 2^-rank_i,
         /// where ∑ 2^-rank_i - is denominator.
 
+        /// raw_estimate = multi / sum. sum = sum(2**-reg)
         double raw_estimate = alpha_m * bucket_count * bucket_count / denominator.get();
 
         double final_estimate = fixRawEstimate(raw_estimate);
@@ -398,8 +418,9 @@ private:
     inline UInt8 calculateRank(HashValueType val) const
     {
         if (unlikely(val == 0))
-            return max_rank;
+            return max_rank; // int max_rank = sizeof(HashValueType) * 8 - precision + 1;
 
+        // 结尾是0的数量 + 1
         auto zeros_plus_one = details::TrailingZerosCounter<HashValueType>::apply(val) + 1;
 
         if (unlikely(zeros_plus_one) > max_rank)
@@ -410,11 +431,13 @@ private:
 
     inline HashValueType getHash(Value key) const
     {
+        // 这应该没问题，因为值和HLL的键相同。原来这里没求hash是在外面做的
         /// NOTE: this should be OK, since value is the same as key for HLL.
         return static_cast<HashValueType>(
             Hash::operator()(static_cast<Key>(key)));
     }
 
+    /// 更新当前存储桶的最大rank。
     /// Update maximum rank for current bucket.
     /// ALWAYS_INLINE is required to have better code layout for uniqCombined function
     void ALWAYS_INLINE update(HashValueType bucket, UInt8 rank)
@@ -512,9 +535,10 @@ private:
         return fixed_estimate;
     }
 
-    static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1;
+    static constexpr int max_rank = sizeof(HashValueType) * 8 - precision + 1; // max_rank = sizeof(HashValueType) * 8 - precision + 1
 
-    RankStore rank_store;
+    // 属性(序列化反序列化)：rank_store,denominator, zeros
+    RankStore rank_store; // 数组
 
     /// Expression's denominator for HyperLogLog algorithm.
     using DenominatorCalculatorType = details::Denominator<precision, max_rank, HashValueType, DenominatorType, denominator_mode>;
@@ -522,7 +546,7 @@ private:
 
     /// Number of zeros in rank storage.
     using ZerosCounterType = typename details::MinCounterType<bucket_count>::Type;
-    ZerosCounterType zeros = bucket_count;
+    ZerosCounterType zeros = bucket_count; // 他这个zeros还是每次更新的，真是麻烦
 
     static details::LogLUT<precision> log_lut;
 
@@ -556,6 +580,8 @@ details::LogLUT<precision> HyperLogLogCounter
 >::log_lut;
 
 
+///Metric中使用了表达式分母的轻量级实现。
+///不得更改序列化格式。
 /// Lightweight implementation of expression's denominator is used in Metrage.
 /// Serialization format must not be changed.
 using HLL12 = HyperLogLogCounter<

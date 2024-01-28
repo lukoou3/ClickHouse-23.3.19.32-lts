@@ -127,6 +127,7 @@ template <typename T>
 void SerializationNumber<T>::deserializeBinary(IColumn & column, ReadBuffer & istr, const FormatSettings &) const
 {
     typename ColumnVector<T>::ValueType x;
+    /// 读取基本数据类型
     readBinary(x, istr);
     assert_cast<ColumnVector<T> &>(column).getData().push_back(x);
 }
