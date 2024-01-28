@@ -34,6 +34,7 @@ struct QuantileReservoirSamplerDeterministic
     template <typename Determinator>
     void add(const Value & x, const Determinator & determinator)
     {
+        // 使用固定的hash使结果确定
         data.insert(x, determinator);
     }
 

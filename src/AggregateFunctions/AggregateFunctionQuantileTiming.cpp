@@ -18,7 +18,7 @@ namespace ErrorCodes
 
 namespace
 {
-
+// 分位数都是用的AggregateFunctionQuantile，QuantileTiming<Value>这个参数不一样而已
 template <typename Value, bool _> using FuncQuantileTiming = AggregateFunctionQuantile<Value, QuantileTiming<Value>, NameQuantileTiming, false, Float32, false>;
 template <typename Value, bool _> using FuncQuantilesTiming = AggregateFunctionQuantile<Value, QuantileTiming<Value>, NameQuantilesTiming, false, Float32, true>;
 

@@ -62,6 +62,7 @@ private:
     static constexpr bool returns_float = !(std::is_same_v<FloatReturnType, void>);
     static_assert(!is_decimal<Value> || !returns_float);
 
+    // quantileGK算法ClickHouse release 23.4, 2023-04-26版本才添加
     QuantileLevels<Float64> levels;
 
     /// Used when there are single level to get.

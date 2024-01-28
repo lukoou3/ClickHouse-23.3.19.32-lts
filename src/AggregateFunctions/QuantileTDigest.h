@@ -22,13 +22,21 @@ namespace ErrorCodes
 }
 
 
-/** The algorithm was implemented by Alexei Borzenkov https://github.com/snaury
+/**
+  * 该算法由Alexei Borzenkov实现https://github.com/snaury除了合并、序列化和排序，
+  * 以及选择类型和其他更改之外，他拥有代码的作者身份和该命名空间中一半的注释。我们感谢Alexei Borzenkov编写的原始代码。
+  * The algorithm was implemented by Alexei Borzenkov https://github.com/snaury
   * He owns the authorship of the code and half the comments in this namespace,
   * except for merging, serialization, and sorting, as well as selecting types and other changes.
   * We thank Alexei Borzenkov for writing the original code.
   */
 
-/** Implementation of t-digest algorithm (https://github.com/tdunning/t-digest).
+/**
+  * t-摘要算法的实现(https://github.com/tdunning/t-digest). 这个选项与java上的MergingDigest非常相似，
+  * 但关于并集的决定是基于文章中的原始条件接受的（通过大小约束，使用每个质心的分位数的近似值，而不是其边界位置在曲线上的距离）。
+  * java上的MergingDigest提供的质心明显少于此变体，这对相同压缩因子的准确性产生了负面影响，但提供了大小保证。
+  * 关于这个变体的建议，作者自己说，摘要的大小像O（log（n））一样增长，而java上的版本不取决于预期的点数。java上的一个变体也使用了asin，这会稍微减慢算法的速度。
+  * Implementation of t-digest algorithm (https://github.com/tdunning/t-digest).
   * This option is very similar to MergingDigest on java, however the decision about
   * the union is accepted based on the original condition from the article
   * (via a size constraint, using the approximation of the quantile of each
@@ -300,6 +308,7 @@ public:
     {
         compress();
         writeVarUInt(centroids.size(), buf);
+        // 写入的就是全部的质心
         buf.write(reinterpret_cast<const char *>(centroids.data()), centroids.size() * sizeof(centroids[0]));
     }
 
@@ -331,6 +340,7 @@ public:
         auto it = std::remove_if(centroids.begin(), centroids.end(), [](Centroid & c) { return std::isnan(c.mean); });
         centroids.erase(it, centroids.end());
 
+        // 允许读取/写入具有不同epsilon/max_centroid参数的TDigest
         compress(); // Allows reading/writing TDigests with different epsilon/max_centroids params
     }
 

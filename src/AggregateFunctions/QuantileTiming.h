@@ -19,15 +19,23 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-/** Calculates quantile for time in milliseconds, less than 30 seconds.
+/**
+  *
+  * 以毫秒为单位计算时间的分位数，小于30秒。
+  * 如果该值大于30秒，则将该值设置为30秒。
+  * Calculates quantile for time in milliseconds, less than 30 seconds.
   * If the value is greater than 30 seconds, the value is set to 30 seconds.
   *
+  * 如果总值不大于约5670，则计算是准确的。
   * If total values is not greater than about 5670, then the calculation is accurate.
   *
   * Otherwise
+  *  如果时间小于1024ms，则计算是准确的。
   *  If time less that 1024 ms, than calculation is accurate.
+  *  否则，计算四舍五入到16ms的倍数。
   *  Otherwise, the computation is rounded to a multiple of 16 ms.
   *
+  * 使用了三种不同的数据结构：
   * Three different data structures are used:
   * - flat array (of all met values) of fixed length, allocated inplace, size 64 bytes; Stores 0..31 values;
   * - flat array (of all values encountered), allocated separately, increasing length;
@@ -35,6 +43,7 @@ namespace ErrorCodes
   * -- for values from 0 to 1023 - in increments of 1;
   * -- for values from 1024 to 30,000 - in increments of 16;
   *
+  * 这第三个histogram个hdr类型，就是强制范围小而已
   * NOTE: 64-bit integer weight can overflow, see also QuantileExactWeighted.h::get()
   */
 
