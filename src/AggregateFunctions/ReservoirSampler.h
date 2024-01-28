@@ -87,12 +87,14 @@ public:
 
         sorted = false;
         ++total_values;
+        // sample_count默认8192
         if (samples.size() < sample_count)
         {
             samples.push_back(v);
         }
         else
         {
+            // 直接替换，这么简单吗
             UInt64 rnd = genRandom(total_values);
             if (rnd < sample_count)
                 samples[rnd] = v;
@@ -237,17 +239,19 @@ public:
         rng_buf << rng;
         DB::writeStringBinary(rng_buf.str(), buf);
 
+        // 抽样数组
         for (size_t i = 0; i < std::min(sample_count, total_values); ++i)
             DB::writeBinary(samples[i], buf);
     }
 
 private:
+    /// 我们在堆栈上分配一点内存，以避免在有许多对象和少量元素时进行分配
     /// We allocate a little memory on the stack - to avoid allocations when there are many objects with a small number of elements.
     using Array = DB::PODArrayWithStackMemory<T, 64>;
 
-    size_t sample_count;
+    size_t sample_count; // 默认抽样8192
     size_t total_values = 0;
-    Array samples;
+    Array samples; // 抽样
     pcg32_fast rng;
     bool sorted = false;
 

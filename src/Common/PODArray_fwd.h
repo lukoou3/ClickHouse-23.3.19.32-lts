@@ -16,6 +16,7 @@ inline constexpr size_t integerRoundUp(size_t value, size_t dividend)
     return ((value + dividend - 1) / dividend) * dividend;
 }
 
+// PODArrayWithStackMemory
 template <typename T, size_t initial_bytes = 4096,
           typename TAllocator = Allocator<false>, size_t pad_right_ = 0,
           size_t pad_left_ = 0>

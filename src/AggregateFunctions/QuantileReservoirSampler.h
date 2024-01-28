@@ -12,7 +12,10 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
-/** Quantile calculation with "reservoir sample" algorithm.
+/**
+  * 使用“储层样本”算法进行分位数计算。它从值流中收集有限大小的伪随机子集，并从中近似分位数。结果是不确定的。另请参阅QuantileReserverSamplerDeterministic。
+  * 该算法在内存使用的精度方面效率很低，但在CPU方面效率很高（尽管效率低于QuantileTiming和小集合的QuantileExact）。
+  * Quantile calculation with "reservoir sample" algorithm.
   * It collects pseudorandom subset of limited size from a stream of values,
   *  and approximate quantile from it.
   * The result is non-deterministic. Also look at QuantileReservoirSamplerDeterministic.
@@ -23,6 +26,7 @@ namespace ErrorCodes
 template <typename Value>
 struct QuantileReservoirSampler
 {
+    // 这是核心实现
     using Data = ReservoirSampler<Value, ReservoirSamplerOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
