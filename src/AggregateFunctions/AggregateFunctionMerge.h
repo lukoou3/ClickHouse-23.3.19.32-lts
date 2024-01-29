@@ -42,6 +42,7 @@ public:
 
     String getName() const override
     {
+        // Merge函数定义是这个吗
         return nested_func->getName() + "Merge";
     }
 

@@ -79,6 +79,12 @@ public:
     /// Same as the above but normalize state types so that variants with the same binary representation will use the same type.
     virtual DataTypePtr getNormalizedStateType() const { return getStateType(); }
 
+    /**
+     * 如果两个聚合函数在内存中具有相同的状态表示形式和相同的序列化，则返回true，这样一个聚合函数的状态就可以安全地与另一个一起使用。
+     * 例如
+     *    quantile(x), quantile(a)(x), quantile(b)(x) - 参数不影响状态，仅用于最终确定
+     *    foo(x) and fooIf(x) - If combinator不影响状态
+     */
     /// Returns true if two aggregate functions have the same state representation in memory and the same serialization,
     /// so state of one aggregate function can be safely used with another.
     /// Examples:
