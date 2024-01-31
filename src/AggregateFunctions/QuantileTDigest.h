@@ -51,8 +51,10 @@ namespace ErrorCodes
 template <typename T>
 class QuantileTDigest
 {
+    /// mean, count Float32类型，中间结果和总和（计数）使用Float64类型
     using Value = Float32;
     using Count = Float32;
+    // 用于中间结果和总和（计数）。必须具有比计数更好的精度
     using BetterFloat = Float64; // For intermediate results and sum(Count). Must have better precision, than Count
 
     /** The centroid stores the weight of points around their mean value
@@ -101,6 +103,7 @@ class QuantileTDigest
     static constexpr Params params{};
 
     static constexpr size_t bytes_in_arena = 128 - sizeof(PODArray<Centroid>) - sizeof(BetterFloat) - sizeof(size_t); // If alignment is imperfect, sizeof(TDigest) will be more than naively expected
+    // 优化的数组类型，比std::vector高效
     using Centroids = PODArrayWithStackMemory<Centroid, bytes_in_arena>;
 
     Centroids centroids;
@@ -138,10 +141,11 @@ class QuantileTDigest
       */
     void addCentroid(const Centroid & c)
     {
+        // 添加到centroids数组中
         centroids.push_back(c);
         count += c.count;
         ++unmerged;
-        if (unmerged > params.max_unmerged)
+        if (unmerged > params.max_unmerged) // size_t max_centroids = 2048; size_t max_unmerged = 2048;
             compress();
     }
 
@@ -167,6 +171,7 @@ class QuantileTDigest
         {
             if (batch_pos < batch_size - 1)
             {
+                // 左column“吃掉”右right。批次中间
                 /// The left column "eats" the right. Middle of the batch
                 l_count += r->count;
                 if (r->mean != l_mean) /// Handling infinities of the same sign well.
@@ -179,6 +184,7 @@ class QuantileTDigest
             }
             else
             {
+                // 批次结束，开始下一个
                 // End of the batch, start the next one
                 if (!std::isnan(l->mean)) /// Skip writing batch result if we compressed something to nan.
                 {
@@ -199,6 +205,7 @@ class QuantileTDigest
             count = sum + l_count; // Update count, it might be different due to += inaccuracy
             centroids.resize(l - centroids.begin() + 1);
         }
+        /// 如果（极不可能）是nan，则跳过写入最后一批。
         else /// Skip writing last batch if (super unlikely) it's nan.
         {
             count = sum;
@@ -208,7 +215,10 @@ class QuantileTDigest
     }
 
 public:
-    /** Performs compression of accumulated centroids
+    /**
+      * 压缩累积的centroids
+      * 合并时，不变量保留为每个质心的最大大小，不超过`4 q (1 - q) \ delta N`.
+      * Performs compression of accumulated centroids
       * When merging, the invariant is retained to the maximum size of each
       * centroid that does not exceed `4 q (1 - q) \ delta N`.
       */
@@ -216,9 +226,11 @@ public:
     {
         if (unmerged > 0 || centroids.size() > params.max_centroids)
         {
+            // 基数排序, 基数排序的方式可以采用LSD（Least significant digital）
             // unmerged > 0 implies centroids.size() > 0, hence *l is valid below
             RadixSort<RadixSortTraits>::executeLSD(centroids.data(), centroids.size());
 
+            /// histogram的一对连续bars。
             /// A pair of consecutive bars of the histogram.
             auto l = centroids.begin();
             auto r = std::next(l);
@@ -229,14 +241,17 @@ public:
             BetterFloat l_count = l->count;
             while (r != centroids.end())
             {
+                /// 我们不能将所有相同的值合并到单个质心中，因为这将导致不平衡的压缩和错误的结果。
                 /// N.B. We cannot merge all the same values into single centroids because this will lead to
                 /// unbalanced compression and wrong results.
                 /// For more information see: https://arxiv.org/abs/1902.04023
 
+                /// 直方图到l这部分的比率，包括半个l与整个直方图的比率。也就是说，位置l的分位数是多少。
                 /// The ratio of the part of the histogram to l, including the half l to the entire histogram. That is, what level quantile in position l.
                 BetterFloat ql = (sum + l_count * 0.5) / count;
                 BetterFloat err = ql * (1 - ql);
 
+                /// 直方图到r这部分的比率，包含l和半个r。也就是说，位置r的分位数是多少。
                 /// The ratio of the portion of the histogram to l, including l and half r to the entire histogram. That is, what level is the quantile in position r.
                 BetterFloat qr = (sum + l_count + r->count * 0.5) / count;
                 BetterFloat err2 = qr * (1 - qr);
@@ -246,13 +261,18 @@ public:
 
                 BetterFloat k = count_epsilon_4 * err;
 
-                /** The ratio of the weight of the glued column pair to all values is not greater,
+                /**
+                  *
+                  *
+                  *  The ratio of the weight of the glued column pair to all values is not greater,
                   *  than epsilon multiply by a certain quadratic coefficient, which in the median is 1 (4 * 1/2 * 1/2),
                   *  and at the edges decreases and is approximately equal to the distance to the edge * 4.
                   */
 
+                // 可以左右合并的条件。canBeMerged: l_mean == r_mean || (!std::isinf(l_mean) && !std::isinf(r_mean));
                 if (l_count + r->count <= k && canBeMerged(l_mean, r->mean))
                 {
+                    /// 可以左右合并
                     // it is possible to merge left and right
                     /// The left column "eats" the right.
                     l_count += r->count;
@@ -269,6 +289,7 @@ public:
                     sum += l->count; // Not l_count, otherwise actual sum of elements will be different
                     ++l;
 
+                    /// 我们跳过前面“吃掉”的所有值。
                     /// We skip all the values "eaten" earlier.
                     if (l != r)
                         *l = *r;
@@ -279,22 +300,28 @@ public:
             }
             count = sum + l_count; // Update count, it might be different due to += inaccuracy
 
+            /// 在循环结束时，l右边的所有值都被“吃掉”了。很妙啊
             /// At the end of the loop, all values to the right of l were "eaten".
             centroids.resize(l - centroids.begin() + 1);
             unmerged = 0;
         }
 
+        // 确保centroids.size() < max_centroids
         // Ensures centroids.size() < max_centroids, independent of unprovable floating point blackbox above
         compressBrute();
     }
 
-    /** Adds to the digest a change in `x` with a weight of `cnt` (default 1)
+    /**
+      * 添加值到digest，数量默认是1
+      * Adds to the digest a change in `x` with a weight of `cnt` (default 1)
       */
     void add(T x, UInt64 cnt = 1)
     {
         auto vx = static_cast<Value>(x);
+        // 无效的样本
         if (cnt == 0 || std::isnan(vx))
             return; // Count 0 breaks compress() assumptions, Nan breaks sort(). We treat them as no sample.
+        // 添加Centroid
         addCentroid(Centroid{vx, static_cast<Count>(cnt)});
     }
 
